@@ -4,8 +4,12 @@ from phitest.application import experiment_service, run_service, report_service
 from phitest.adapters.manual_target import ManualTarget
 
 FORBIDDEN_FIELDS = [
-    "conscious", "qualia_detected", "consciousness_probability",
-    "sentience", "phenomenal_experience_confirmed", "agi_score",
+    "qualia_detected", "qualia detected",
+    "consciousness_probability", "consciousness probability",
+    "consciousness score", "sentience score", "sentience gauge",
+    "consciousness meter", "agi score",
+    "phenomenal_experience_confirmed", "agi_score",
+    "conscious = true",
 ]
 
 
@@ -33,7 +37,7 @@ def test_report_has_epistemic_boundary(tmp_repo):
     boundary = report["epistemic_boundary"]
     assert "phenomenal consciousness" in boundary.lower()
     assert "qualia" in boundary.lower()
-    assert "does not constitute" in boundary.lower()
+    assert "do not constitute" in boundary.lower()
 
 
 def test_report_no_forbidden_fields(tmp_repo):

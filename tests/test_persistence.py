@@ -88,7 +88,7 @@ def test_observations_reject_update(tmp_repo):
     obs, _ = _make_obs(tmp_repo)
     conn = sqlite3.connect(tmp_repo._db_path)
     conn.execute("PRAGMA foreign_keys = ON")
-    with pytest.raises(sqlite3.OperationalError):
+    with pytest.raises(sqlite3.IntegrityError):
         conn.execute("UPDATE observations SET content='changed' WHERE id=?", (obs.id,))
         conn.commit()
     conn.close()
@@ -98,7 +98,7 @@ def test_observations_reject_delete(tmp_repo):
     obs, _ = _make_obs(tmp_repo)
     conn = sqlite3.connect(tmp_repo._db_path)
     conn.execute("PRAGMA foreign_keys = ON")
-    with pytest.raises(sqlite3.OperationalError):
+    with pytest.raises(sqlite3.IntegrityError):
         conn.execute("DELETE FROM observations WHERE id=?", (obs.id,))
         conn.commit()
     conn.close()
@@ -120,7 +120,7 @@ def test_metric_results_reject_update(tmp_repo):
                      computed_at=_now())
     tmp_repo.save_metric_result(m)
     conn = sqlite3.connect(tmp_repo._db_path)
-    with pytest.raises(sqlite3.OperationalError):
+    with pytest.raises(sqlite3.IntegrityError):
         conn.execute("UPDATE metric_results SET metric_key='x' WHERE id=?", (m.id,))
         conn.commit()
     conn.close()
@@ -141,7 +141,7 @@ def test_evidence_claims_reject_delete(tmp_repo):
                       statement="s", created_at=_now())
     tmp_repo.save_evidence_claim(c)
     conn = sqlite3.connect(tmp_repo._db_path)
-    with pytest.raises(sqlite3.OperationalError):
+    with pytest.raises(sqlite3.IntegrityError):
         conn.execute("DELETE FROM evidence_claims WHERE id=?", (c.id,))
         conn.commit()
     conn.close()
