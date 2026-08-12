@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ subject.name }} — PhiTest{% endblock %}
+{% block content %}
+<h1>Subject: {{ subject.name }}</h1>
+<dl>
+  <dt>ID</dt><dd>{{ subject.id }}</dd>
+  <dt>Type</dt><dd>{{ subject.subject_type }}</dd>
+  <dt>Adapter</dt><dd>{{ subject.adapter_type }}</dd>
+  <dt>Description</dt><dd>{{ subject.description or '—' }}</dd>
+  <dt>Created</dt><dd>{{ subject.created_at.isoformat() }}</dd>
+  <dt>Archived</dt><dd>{{ subject.archived_at or '—' }}</dd>
+</dl>
+
+<h2>Experiments ({{ experiments|length }})</h2>
+{% if experiments %}
+<table>
+  <tr><th>Name</th><th>Protocol</th><th>Status</th></tr>
+  {% for e in experiments %}
+  <tr>
+    <td><a href="/experiments/{{ e.id }}">{{ e.name }}</a></td>
+    <td>{{ e.protocol_key }}</td>
+    <td>{{ e.status }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p>No experiments.</p>{% endif %}
+
+<h2>Run History ({{ runs|length }})</h2>
+{% if runs %}
+<table>
+  <tr><th>Run ID</th><th>Status</th><th>Started</th></tr>
+  {% for r in runs %}
+  <tr>
+    <td><a href="/runs/{{ r.id }}">{{ r.id[:8] }}…</a></td>
+    <td class="status-{{ r.status }}">{{ r.status }}</td>
+    <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M UTC') }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p>No runs.</p>{% endif %}
+{% endblock %}

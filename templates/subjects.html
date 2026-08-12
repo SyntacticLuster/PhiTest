@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Subjects — PhiTest{% endblock %}
+{% block content %}
+<h1>Subjects</h1>
+
+<section>
+  <h2>Create Subject</h2>
+  <form method="post" action="/subjects">
+    <label>Name <input name="name" required></label>
+    <label>Description <input name="description"></label>
+    <label>Subject Type <input name="subject_type" value="artificial_system" required></label>
+    <label>Adapter Type
+      <select name="adapter_type">
+        <option value="manual">manual</option>
+        <option value="http_json">http_json</option>
+      </select>
+    </label>
+    <label>Adapter Config JSON <textarea name="adapter_config_json">{}</textarea></label>
+    <button type="submit">Create</button>
+  </form>
+</section>
+
+<section>
+  <h2>All Subjects</h2>
+  {% if subjects %}
+  <table>
+    <tr><th>Name</th><th>Type</th><th>Adapter</th><th>Archived</th></tr>
+    {% for s in subjects %}
+    <tr>
+      <td><a href="/subjects/{{ s.id }}">{{ s.name }}</a></td>
+      <td>{{ s.subject_type }}</td>
+      <td>{{ s.adapter_type }}</td>
+      <td>{{ s.archived_at or '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p>No subjects.</p>{% endif %}
+</section>
+{% endblock %}

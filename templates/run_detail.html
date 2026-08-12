@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Run {{ run.id[:8] }} — PhiTest{% endblock %}
+{% block content %}
+<h1>Run {{ run.id[:8] }}…</h1>
+<dl>
+  <dt>Full ID</dt><dd>{{ run.id }}</dd>
+  <dt>Experiment</dt><dd><a href="/experiments/{{ experiment.id }}">{{ experiment.name }}</a></dd>
+  <dt>Status</dt><dd class="status-{{ run.status }}">{{ run.status }}</dd>
+  <dt>Protocol Version</dt><dd>{{ run.protocol_version }}</dd>
+  <dt>Adapter</dt><dd>{{ run.target_adapter }}</dd>
+  <dt>Started</dt><dd>{{ run.started_at.isoformat() }}</dd>
+  <dt>Completed</dt><dd>{{ run.completed_at.isoformat() if run.completed_at else '—' }}</dd>
+  {% if run.failure_reason %}<dt>Failure</dt><dd class="error">{{ run.failure_reason }}</dd>{% endif %}
+</dl>
+
+<p>Audit chain: <strong>{% if chain_valid %}✓ Valid{% else %}✗ INVALID — {{ chain_msg }}{% endif %}</strong></p>
+{% if run.status == 'completed' %}<p><a href="/runs/{{ run.id }}/report">View Report</a></p>{% endif %}
+
+<h2>Stimuli ({{ stimuli|length }})</h2>
+{% if stimuli %}
+<table>
+  <tr><th>#</th><th>Type</th><th>Content</th></tr>
+  {% for s in stimuli %}
+  <tr><td>{{ s.sequence_no }}</td><td>{{ s.stimulus_type }}</td><td>{{ s.content }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p>None.</p>{% endif %}
+
+<h2>Observations ({{ observations|length }})</h2>
+{% if observations %}
+<table>
+  <tr><th>#</th><th>Type</th><th>Content</th></tr>
+  {% for o in observations %}
+  <tr><td>{{ o.sequence_no }}</td><td>{{ o.observation_type }}</td><td>{{ o.content }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p>None.</p>{% endif %}
+
+<h2>Interventions ({{ interventions|length }})</h2>
+{% if interventions %}<p>{{ interventions }}</p>{% else %}<p>None.</p>{% endif %}
+
+<h2>Metrics ({{ metrics|length }})</h2>
+{% if metrics %}
+<table>
+  <tr><th>Key</th><th>Version</th><th>Value</th></tr>
+  {% for m in metrics %}
+  <tr><td>{{ m.metric_key }}</td><td>{{ m.metric_version }}</td><td>{{ m.value_json }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p>None.</p>{% endif %}
+
+<h2>Evidence Claims ({{ claims|length }})</h2>
+{% if claims %}
+<table>
+  <tr><th>Type</th><th>Theory</th><th>Confidence</th><th>Statement</th></tr>
+  {% for c in claims %}
+  <tr>
+    <td>{{ c.claim_type }}</td>
+    <td>{{ c.theory_key or '—' }}</td>
+    <td>{{ c.confidence_label }}</td>
+    <td>{{ c.statement }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p>None.</p>{% endif %}
+{% endblock %}

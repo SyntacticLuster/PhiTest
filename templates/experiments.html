@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Experiments — PhiTest{% endblock %}
+{% block content %}
+<h1>Experiments</h1>
+
+<section>
+  <h2>Create Experiment</h2>
+  <form method="post" action="/experiments">
+    <label>Subject
+      <select name="subject_id" required>
+        {% for s in subjects %}<option value="{{ s.id }}">{{ s.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Name <input name="name" required></label>
+    <label>Description <input name="description"></label>
+    <label>Protocol
+      <select name="protocol_key" required>
+        {% for p in protocols %}<option value="{{ p.key }}">{{ p.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Theory Keys JSON (e.g. ["integration"]) <input name="theory_keys_json" value="[]"></label>
+    <label>Configuration JSON <textarea name="configuration_json">{}</textarea></label>
+    <button type="submit">Create</button>
+  </form>
+</section>
+
+<section>
+  <h2>All Experiments</h2>
+  {% if experiments %}
+  <table>
+    <tr><th>Name</th><th>Protocol</th><th>Status</th><th>Created</th></tr>
+    {% for e in experiments %}
+    <tr>
+      <td><a href="/experiments/{{ e.id }}">{{ e.name }}</a></td>
+      <td>{{ e.protocol_key }}</td>
+      <td>{{ e.status }}</td>
+      <td>{{ e.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p>No experiments.</p>{% endif %}
+</section>
+{% endblock %}

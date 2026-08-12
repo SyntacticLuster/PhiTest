@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Report — Run {{ run.id[:8] }} — PhiTest{% endblock %}
+{% block content %}
+<h1>Experimental Run Report</h1>
+
+<section>
+  <h2>Identification</h2>
+  <dl>
+    <dt>Subject</dt><dd>{{ subject.name }} ({{ subject.subject_type }})</dd>
+    <dt>Experiment</dt><dd>{{ experiment.name }}</dd>
+    <dt>Protocol</dt><dd>{{ protocol.name if protocol else experiment.protocol_key }}</dd>
+    <dt>Protocol Version</dt><dd>{{ run.protocol_version }}</dd>
+    <dt>Run ID</dt><dd>{{ run.id }}</dd>
+    <dt>Started (UTC)</dt><dd>{{ run.started_at.isoformat() }}</dd>
+    <dt>Completed (UTC)</dt><dd>{{ run.completed_at.isoformat() if run.completed_at else 'incomplete' }}</dd>
+    <dt>Status</dt><dd class="status-{{ run.status }}">{{ run.status }}</dd>
+    <dt>Random Seed</dt><dd>{{ run.random_seed }}</dd>
+    <dt>Target Adapter</dt><dd>{{ run.target_adapter }}</dd>
+  </dl>
+</section>
+
+<section>
+  <h2>Stimuli ({{ stimuli|length }})</h2>
+  {% for s in stimuli %}
+  <div class="evidence-block">
+    <span class="label">Stimulus #{{ s.sequence_no }} [{{ s.stimulus_type }}]</span>
+    <p>{{ s.content }}</p>
+  </div>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Interventions ({{ interventions|length }})</h2>
+  {% if interventions %}
+  {% for i in interventions %}
+  <div class="evidence-block">
+    <span class="label">Intervention #{{ i.sequence_no }} [{{ i.intervention_type }}]</span>
+    <p>{{ i.rationale }}</p>
+  </div>
+  {% endfor %}
+  {% else %}<p>No interventions recorded.</p>{% endif %}
+</section>
+
+<section>
+  <h2>Raw Observations ({{ observations|length }})</h2>
+  {% for o in observations %}
+  <div class="evidence-block">
+    <span class="label">Observation #{{ o.sequence_no }} [{{ o.observation_type }}]</span>
+    <p>{{ o.content }}</p>
+  </div>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Operational Metrics ({{ metrics|length }})</h2>
+  {% for m in metrics %}
+  <div class="evidence-block">
+    <span class="label">{{ m.metric_key }} v{{ m.metric_version }}</span>
+    <p>Value: {{ m.value_json }}</p>
+    <p><em>{{ m.definition }}</em></p>
+  </div>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Theory-Associated Predictions</h2>
+  {% if theories %}
+  {% for t in theories %}
+  <h3>{{ t.name }}</h3>
+  <ul>{% for p in t.predictions %}<li>{{ p }}</li>{% endfor %}</ul>
+  {% endfor %}
+  {% else %}<p>No theory families associated with this experiment.</p>{% endif %}
+</section>
+
+<section>
+  <h2>Supported Predictions</h2>
+  {% if supported_predictions %}
+  {% for c in supported_predictions %}<div class="evidence-block supported"><p>{{ c.statement }}</p></div>{% endfor %}
+  {% else %}<p>None established.</p>{% endif %}
+</section>
+
+<section>
+  <h2>Contradicted Predictions</h2>
+  {% if contradicted_predictions %}
+  {% for c in contradicted_predictions %}<div class="evidence-block contradicted"><p>{{ c.statement }}</p></div>{% endfor %}
+  {% else %}<p>None established.</p>{% endif %}
+</section>
+
+<section>
+  <h2>Unresolved Predictions</h2>
+  {% for c in unresolved_predictions %}
+  <div class="evidence-block unresolved"><p>{{ c.statement }}</p></div>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Self-Reports</h2>
+  <p class="notice">The following are classified as self-report behavior. They are not direct evidence of phenomenal experience.</p>
+  {% for c in self_reports %}
+  <div class="evidence-block self-report"><p>{{ c.statement }}</p></div>
+  {% endfor %}
+</section>
+
+<section>
+  <h2>Limitations</h2>
+  <p>{{ limitations }}</p>
+</section>
+
+<section>
+  <h2>Audit Chain Status</h2>
+  <p>{% if audit_chain_valid %}✓ Valid — {{ audit_chain_message }}{% else %}✗ INVALID — {{ audit_chain_message }}{% endif %}</p>
+</section>
+
+<section class="epistemic-boundary">
+  <h2>Epistemic Boundary</h2>
+  <p>{{ epistemic_boundary }}</p>
+</section>
+{% endblock %}

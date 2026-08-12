@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}{{ experiment.name }} — PhiTest{% endblock %}
+{% block content %}
+<h1>Experiment: {{ experiment.name }}</h1>
+<dl>
+  <dt>ID</dt><dd>{{ experiment.id }}</dd>
+  <dt>Subject</dt><dd><a href="/subjects/{{ subject.id }}">{{ subject.name }}</a></dd>
+  <dt>Protocol</dt><dd>{{ experiment.protocol_key }}</dd>
+  <dt>Status</dt><dd class="status-{{ experiment.status }}">{{ experiment.status }}</dd>
+  <dt>Description</dt><dd>{{ experiment.description or '—' }}</dd>
+  <dt>Created</dt><dd>{{ experiment.created_at.isoformat() }}</dd>
+</dl>
+
+{% if protocol %}
+<h2>Protocol: {{ protocol.name }}</h2>
+<p>{{ protocol.description }}</p>
+<p><strong>Limitations:</strong> {{ protocol.limitations }}</p>
+<p><strong>Theory relevance:</strong> {{ protocol.theory_relevance | join(', ') }}</p>
+{% endif %}
+
+{% if theories %}
+<h2>Theory Families</h2>
+{% for t in theories %}
+<h3>{{ t.name }}</h3>
+<p>{{ t.summary }}</p>
+<p><em>Limitations: {{ t.limitations }}</em></p>
+{% endfor %}
+{% endif %}
+
+<h2>Execute Run</h2>
+<form method="post" action="/experiments/{{ experiment.id }}/run">
+  {% if subject.adapter_type == 'manual' %}
+  <label>Manual Response Text (applied to all stimuli)
+    <textarea name="response_text" rows="4" placeholder="Enter the target system response here"></textarea>
+  </label>
+  {% endif %}
+  <label>Random Seed (optional) <input name="random_seed" type="number"></label>
+  <button type="submit">Execute Run</button>
+</form>
+
+<h2>Runs ({{ runs|length }})</h2>
+{% if runs %}
+<table>
+  <tr><th>Run ID</th><th>Status</th><th>Started</th><th>Report</th></tr>
+  {% for r in runs %}
+  <tr>
+    <td><a href="/runs/{{ r.id }}">{{ r.id[:8] }}…</a></td>
+    <td class="status-{{ r.status }}">{{ r.status }}</td>
+    <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M UTC') }}</td>
+    <td>{% if r.status == 'completed' %}<a href="/runs/{{ r.id }}/report">Report</a>{% else %}—{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}<p>No runs yet.</p>{% endif %}
+{% endblock %}

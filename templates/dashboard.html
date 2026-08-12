@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — PhiTest{% endblock %}
+{% block content %}
+<h1>PhiTest Dashboard</h1>
+<p class="notice">PhiTest records behavioral and self-report evidence. It does not detect or measure phenomenal consciousness.</p>
+
+<section>
+  <h2>Subjects ({{ subjects|length }})</h2>
+  {% if subjects %}
+  <table>
+    <tr><th>Name</th><th>Type</th><th>Adapter</th><th>Created</th></tr>
+    {% for s in subjects %}
+    <tr>
+      <td><a href="/subjects/{{ s.id }}">{{ s.name }}</a></td>
+      <td>{{ s.subject_type }}</td>
+      <td>{{ s.adapter_type }}</td>
+      <td>{{ s.created_at.strftime('%Y-%m-%d %H:%M UTC') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p>No subjects yet. <a href="/subjects">Create one.</a></p>{% endif %}
+</section>
+
+<section>
+  <h2>Recent Runs ({{ runs|length }})</h2>
+  {% if runs %}
+  <table>
+    <tr><th>Run ID</th><th>Experiment</th><th>Status</th><th>Started</th></tr>
+    {% for r in runs %}
+    <tr>
+      <td><a href="/runs/{{ r.id }}">{{ r.id[:8] }}…</a></td>
+      <td>{{ r.experiment_id[:8] }}…</td>
+      <td class="status-{{ r.status }}">{{ r.status }}</td>
+      <td>{{ r.started_at.strftime('%Y-%m-%d %H:%M UTC') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p>No runs yet.</p>{% endif %}
+</section>
+{% endblock %}
