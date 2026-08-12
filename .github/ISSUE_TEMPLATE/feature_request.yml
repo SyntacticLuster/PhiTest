@@ -1,0 +1,39 @@
+name: Feature request
+description: Propose a new capability, protocol, metric, or adapter
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem being solved
+      description: What experimental or operational need does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Proposed operational behavior
+      description: What should ɸTest do differently? Be specific about inputs, outputs, and stored data.
+    validations:
+      required: true
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Scientific or theoretical motivation
+      description: Which theory family or experimental design does this support?
+  - type: textarea
+    id: prediction
+    attributes:
+      label: Falsifiable prediction or measurable quantity
+      description: If applicable, what observable outcome would confirm or disconfirm this feature's value?
+  - type: textarea
+    id: boundary
+    attributes:
+      label: Evidence boundary impact
+      description: >
+        Does this proposal affect how evidence is classified (observation, operational_metric,
+        theory_prediction, inference, self_report, unresolved)?
+        Does it risk introducing a consciousness verdict or qualia score?
+        If so, explain how the epistemic boundary is preserved.
+    validations:
+      required: true

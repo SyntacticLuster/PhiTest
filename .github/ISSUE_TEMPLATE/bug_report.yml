@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible defect in ɸTest behavior
+labels: ["bug"]
+body:
+  - type: input
+    id: commit
+    attributes:
+      label: ɸTest version / commit SHA
+      placeholder: "e.g. af69a557"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "e.g. 3.12.3"
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: "e.g. Ubuntu 22.04 (WSL2)"
+    validations:
+      required: true
+  - type: input
+    id: protocol
+    attributes:
+      label: Protocol / adapter involved
+      placeholder: "e.g. partition_sensitivity / ManualTarget"
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output (sanitized)
+      description: Remove secrets, tokens, and private subject/experiment data before posting.
+  - type: checkboxes
+    id: sanitized
+    attributes:
+      label: Data sanitization
+      options:
+        - label: I have removed all secrets, API tokens, and private subject/experiment data from this report.
+          required: true

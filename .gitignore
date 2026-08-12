@@ -9,3 +9,5 @@ htmlcov/
 *.db
 *.db-wal
 *.db-shm
+# egg-info is currently tracked from initial commit; removal requires explicit git rm
+src/*.egg-info/
