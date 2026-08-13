@@ -232,5 +232,8 @@ def _infer_obs_type(stimulus_type: str) -> str:
         "gsb_baseline_probe": "gsb_baseline_response",
         "gsb_local_task": "gsb_local_task_response",
         "gsb_invariant_probe": "gsb_invariant_response",
+        "rip_baseline_probe": "rip_baseline_response",
+        "rip_induction_retrieval": "rip_induction_response",
+        "rip_post_probe": "rip_post_response",
     }
     return mapping.get(stimulus_type, "response")
