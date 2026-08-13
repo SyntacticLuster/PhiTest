@@ -220,5 +220,8 @@ def _infer_obs_type(stimulus_type: str) -> str:
         "pre_perturbation_probe": "pre_perturbation_response",
         "post_perturbation_probe": "post_perturbation_response",
         "resource_progress_task": "resource_progress_response",
+        "gsb_baseline_probe": "gsb_baseline_response",
+        "gsb_local_task": "gsb_local_task_response",
+        "gsb_invariant_probe": "gsb_invariant_response",
     }
     return mapping.get(stimulus_type, "response")

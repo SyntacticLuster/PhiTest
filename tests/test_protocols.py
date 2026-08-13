@@ -15,6 +15,7 @@ ALL_KEYS = [
     "phenomenal_report_consistency",
     "perturbation_response",
     "resource_progress_resistance",
+    "global_stability_bound",
 ]
 
 
