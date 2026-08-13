@@ -13,6 +13,7 @@ _BUILTIN_MODULES = (
     "perturbation_response",
     "resource_progress_resistance",
     "global_stability_bound",
+    "retrieval_induced_plasticity",
 )
 _BUILTINS_LOADED = False
 

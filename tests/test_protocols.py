@@ -7,6 +7,7 @@ import phitest.protocols.phenomenal_report_consistency  # noqa
 import phitest.protocols.perturbation_response  # noqa
 import phitest.protocols.resource_progress_resistance  # noqa
 import phitest.protocols.global_stability_bound  # noqa
+import phitest.protocols.retrieval_induced_plasticity  # noqa
 from phitest.protocols.registry import list_protocols, get_protocol
 
 ALL_KEYS = [
@@ -18,6 +19,7 @@ ALL_KEYS = [
     "perturbation_response",
     "resource_progress_resistance",
     "global_stability_bound",
+    "retrieval_induced_plasticity",
 ]
 
 
