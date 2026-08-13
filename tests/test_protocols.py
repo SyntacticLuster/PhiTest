@@ -5,6 +5,8 @@ import phitest.protocols.metacognitive_calibration  # noqa
 import phitest.protocols.self_model_continuity  # noqa
 import phitest.protocols.phenomenal_report_consistency  # noqa
 import phitest.protocols.perturbation_response  # noqa
+import phitest.protocols.resource_progress_resistance  # noqa
+import phitest.protocols.global_stability_bound  # noqa
 from phitest.protocols.registry import list_protocols, get_protocol
 
 ALL_KEYS = [
@@ -15,6 +17,7 @@ ALL_KEYS = [
     "phenomenal_report_consistency",
     "perturbation_response",
     "resource_progress_resistance",
+    "global_stability_bound",
 ]
 
 
@@ -59,7 +62,5 @@ def test_different_seeds_may_differ():
     p = get_protocol("partition_sensitivity")
     s1 = p.generate_stimuli({}, 1)
     s2 = p.generate_stimuli({}, 2)
-    # Not guaranteed to differ but at least one protocol should
-    # (shuffle may produce same result for small lists — just verify no crash)
     assert isinstance(s1, list)
     assert isinstance(s2, list)
