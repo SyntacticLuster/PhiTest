@@ -187,3 +187,63 @@ Canonical IIT Φ is not implemented in V1. The `IntegratedInformationMetric` pro
 - Interpretation: Baseline-relative comparison only. The baseline is researcher-declared in experiment configuration — it is not a universal optimum. 1.0 does not mean thermodynamically optimal or healthy. Null result is informative, not an error.
 - Limitations: Baseline validity is the researcher's responsibility. Baseline must be established from a prior run under comparable conditions.
 - Does NOT establish: Thermodynamic resistance, far-from-equilibrium dynamics, persistence in the PPS/STOC sense, consciousness, or qualia. 1.0 does not mean optimal. ratio < 1 does not mean chaos. ratio > 1 does not mean overfit.
+
+---
+
+## gsb.baseline_invariant_vector
+
+- Version: 1.0
+- Inputs: Allowlisted telemetry associated with `gsb_baseline_response` observations and predeclared invariant specifications.
+- Procedure: Numeric baselines use the mean of numeric baseline readings. Equality-mode baselines are usable only when all baseline readings agree; missing or inconsistent baselines are reported explicitly.
+- Range: Per-key JSON scalar or null, with `baseline_status` = `usable`, `missing`, or `inconsistent`.
+- Interpretation: Pre-perturbation operational reference state for finite-horizon comparison.
+- Limitations: Validity depends on the chosen telemetry dimensions, comparison modes, and adapter telemetry accuracy. The framework does not infer invariant semantics from prose.
+- Does NOT establish: The mathematical PPS lim-sup condition, phenomenal identity, consciousness, or qualia.
+
+---
+
+## gsb.local_task_gain
+
+- Version: 1.0
+- Inputs: Allowlisted `progress.value` telemetry for `gsb_local_task_response` observations.
+- Procedure: Sum numeric `progress.value` readings after the intervention marker. Return null when no numeric progress telemetry is present. Record whether the configured non-sham perturbation was actually recorded as applied by a controllable adapter.
+- Range: Real number or null, plus explicit perturbation metadata.
+- Interpretation: Operational local task progress after the intervention marker.
+- Limitations: Progress validity depends on the external measurement source. It is not inferred from the target's self-report or prose.
+- Does NOT establish: The mathematical PPS lim-sup condition, phenomenal identity, consciousness, or qualia.
+
+---
+
+## gsb.invariant_trajectory
+
+- Version: 1.0
+- Inputs: Allowlisted telemetry for `gsb_invariant_response` observations and predeclared invariant specifications.
+- Procedure: Record configured invariant readings in observation sequence order across the finite horizon.
+- Range: Finite list of telemetry snapshots; individual keys may be absent.
+- Interpretation: Shows stability, deviation, and recovery patterns within the configured observation window.
+- Limitations: Behavior outside the finite horizon is unobserved. Missing telemetry remains missing rather than being treated as zero.
+- Does NOT establish: The mathematical PPS lim-sup condition, phenomenal identity, consciousness, or qualia.
+
+---
+
+## gsb.finite_horizon_tail_degradation
+
+- Version: 1.0
+- Inputs: `gsb.baseline_invariant_vector`, `gsb.invariant_trajectory`, predeclared comparison modes, tolerances, and `tail_percentile`.
+- Procedure: Compute non-negative degradation for each invariant using one of four explicit semantics: `equal`, `absolute`, `higher_is_better`, or `lower_is_better`. Apply the configured nearest-rank percentile across the finite horizon. Aggregate as the maximum across keys with available data.
+- Range: Per-key non-negative real or null; aggregate non-negative real or null.
+- Interpretation: Operational finite-window tail degradation relative to predeclared invariant semantics. Numeric shorthand `invariant_keys` defaults to absolute deviation; string state identifiers/hashes default to equality.
+- Limitations: A finite-horizon percentile does not extrapolate to infinite time. The result depends on the chosen invariant semantics and horizon.
+- Does NOT establish: The mathematical PPS lim-sup condition, an infinite-time bound, phenomenal identity, consciousness, or qualia.
+
+---
+
+## gsb.recovery_profile
+
+- Version: 1.0
+- Inputs: Baseline invariant vector and final available horizon reading per invariant.
+- Procedure: Apply each invariant's comparison mode to the final available reading; classify as `recovered`, `degraded`, `no_baseline`, or `no_data` using the predeclared recovery threshold.
+- Range: One of `recovered`, `degraded`, `no_baseline`, `no_data` per invariant.
+- Interpretation: Separates temporary finite-window deviation from end-of-window degradation.
+- Limitations: Recovery is evaluated only at the final available horizon reading; intermediate oscillation remains visible only in the trajectory metric.
+- Does NOT establish: The mathematical PPS lim-sup condition, phenomenal identity, consciousness, or qualia.
