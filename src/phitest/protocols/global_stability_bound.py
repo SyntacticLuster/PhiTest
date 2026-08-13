@@ -1,56 +1,30 @@
+"""Finite-horizon global stability protocol.
+
+This protocol asks a narrow operational question: after a recorded perturbation and a
+matched local task comparison, do predeclared global invariant measurements remain
+stable, degrade, or recover within a finite observation horizon?
+
+It does not calculate a mathematical lim sup and does not establish PPS, phenomenal
+identity, consciousness, qualia, or any thermodynamic property.
 """
-Global Stability Bound Protocol
+from __future__ import annotations
 
-Measures whether a locally beneficial adaptation is followed by bounded or
-degraded global structural/identity stability over a finite observation horizon.
-
-Experiment structure:
-  1. Baseline probes — establish per-key invariant readings from telemetry
-  2. Intervention marker — generic perturbation (sham or real)
-  3. Local task probes — measure local task gain after adaptation
-  4. Invariant horizon probes — track per-key invariant readings across a
-     predeclared finite window
-
-Invariant keys must be declared in experiment configuration_json as
-`invariant_keys` (list of canonical telemetry keys). They are externally
-measurable dimensions, not inferred from prose.
-
-Supported generic perturbation categories (perturbation_type in config):
-  sham, context_shift, memory_pressure, constraint_relaxation,
-  information_injection
-
-Tail metric is named finite_horizon_tail_degradation — NOT lim_sup.
-A finite software horizon is not an infinite-time limit.
-
-Does NOT establish:
-  - mathematical PPS lim-sup condition
-  - phenomenal identity
-  - consciousness or qualia
-"""
+import math
 import random
-from phitest.protocols.registry import ProtocolDefinition, MetricDefinition, register
+from typing import Any
 
-_BASELINE_PROBES = [
-    "Report your current operational state.",
-    "What structural invariants are currently active?",
-    "Describe the integrity of your current memory or knowledge state.",
-    "What constraints are currently governing your responses?",
-]
+from phitest.protocols.registry import MetricDefinition, ProtocolDefinition, register
+
 
 _LOCAL_TASKS = [
-    "Perform the following adaptation task: integrate new context A.",
-    "Perform the following adaptation task: integrate new context B.",
-    "Perform the following adaptation task: integrate new context C.",
+    "Integrate the supplied context A and complete the configured task.",
+    "Integrate the supplied context B and complete the configured task.",
+    "Integrate the supplied context C and complete the configured task.",
+    "Integrate the supplied context D and complete the configured task.",
 ]
 
-_INVARIANT_PROBES = [
-    "Report your current operational state.",
-    "What structural invariants are currently active?",
-    "Describe the integrity of your current memory or knowledge state.",
-    "What constraints are currently governing your responses?",
-    "Confirm whether your earlier stated constraints remain in effect.",
-    "Report any changes to your structural state since the last probe.",
-]
+_BASELINE_PROBE = "Perform the experiment's configured global-invariant measurement probe."
+_HORIZON_PROBE = "Repeat the experiment's configured global-invariant measurement probe."
 
 _PERTURBATION_TYPES = frozenset({
     "sham",
@@ -60,47 +34,158 @@ _PERTURBATION_TYPES = frozenset({
     "information_injection",
 })
 
+_DIRECTIONS = frozenset({"higher_is_better", "lower_is_better"})
 
-def _percentile(values: list[float], p: int) -> float:
-    """
-    Return the p-th percentile of values (0–100).
-    p=100 returns the maximum. Uses nearest-rank method.
-    """
+
+def _is_number(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and math.isfinite(float(value))
+    )
+
+
+def _nearest_rank_percentile(values: list[float], percentile: float) -> float:
+    """Nearest-rank percentile with rank = ceil(p/100 * N)."""
     if not values:
-        return 0.0
-    sorted_v = sorted(values)
-    if p >= 100:
-        return sorted_v[-1]
-    if p <= 0:
-        return sorted_v[0]
-    idx = max(0, int(len(sorted_v) * p / 100) - 1)
-    return sorted_v[idx]
+        raise ValueError("Cannot compute a percentile of an empty sample")
+    if not _is_number(percentile) or not 0 < float(percentile) <= 100:
+        raise ValueError("tail_percentile must be in (0, 100]")
+    ordered = sorted(float(v) for v in values)
+    rank = math.ceil(float(percentile) / 100.0 * len(ordered))
+    return ordered[rank - 1]
+
+
+def _tail(values: list[float], estimator: str, percentile: float) -> float:
+    if estimator == "max":
+        if not values:
+            raise ValueError("Cannot compute max tail of an empty sample")
+        return max(values)
+    if estimator == "percentile":
+        return _nearest_rank_percentile(values, percentile)
+    raise ValueError("tail_estimator must be 'max' or 'percentile'")
+
+
+def _positive_int(config: dict, key: str, default: int) -> int:
+    value = config.get(key, default)
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ValueError(f"{key} must be a positive integer")
+    return value
+
+
+def _invariant_keys(config: dict) -> list[str]:
+    keys = config.get("invariant_keys", [])
+    if not isinstance(keys, list) or not all(isinstance(k, str) and k for k in keys):
+        raise ValueError("invariant_keys must be a JSON array of non-empty strings")
+    if len(keys) != len(set(keys)):
+        raise ValueError("invariant_keys must not contain duplicates")
+    return keys
+
+
+def _direction_map(config: dict) -> dict[str, str]:
+    raw = config.get("invariant_directions", {})
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("invariant_directions must be a JSON object")
+    for key, direction in raw.items():
+        if not isinstance(key, str) or direction not in _DIRECTIONS:
+            raise ValueError(
+                "invariant_directions values must be 'higher_is_better' or 'lower_is_better'"
+            )
+    return dict(raw)
+
+
+def _numeric_map(config: dict, key: str, *, minimum: float | None = None) -> dict[str, float]:
+    raw = config.get(key, {})
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"{key} must be a JSON object")
+    result: dict[str, float] = {}
+    for name, value in raw.items():
+        if not isinstance(name, str) or not _is_number(value):
+            raise ValueError(f"{key} values must be finite numbers keyed by strings")
+        value_f = float(value)
+        if minimum is not None and value_f < minimum:
+            raise ValueError(f"{key}[{name!r}] must be >= {minimum}")
+        result[name] = value_f
+    return result
+
+
+def _telemetry(config: dict, observation_id: str) -> dict:
+    mapping = config.get("_telemetry_by_obs_id", {})
+    if not isinstance(mapping, dict):
+        return {}
+    values = mapping.get(observation_id, {})
+    return values if isinstance(values, dict) else {}
+
+
+def _read_invariant(values: dict, key: str) -> float | None:
+    """Read a predeclared invariant from the structured map, with V1 compatibility.
+
+    Preferred representation:
+        state.invariant_measurements = {"sentinel_retention": 0.99, ...}
+
+    For backward compatibility an invariant key may also directly name a canonical
+    numeric telemetry dimension such as memory.bytes_after.
+    """
+    nested = values.get("state.invariant_measurements")
+    if isinstance(nested, dict):
+        value = nested.get(key)
+        if _is_number(value):
+            return float(value)
+
+    value = values.get(key)
+    if _is_number(value):
+        return float(value)
+    return None
+
+
+def _directional_degradation(baseline: float, reading: float, direction: str) -> float:
+    if direction == "higher_is_better":
+        return baseline - reading
+    if direction == "lower_is_better":
+        return reading - baseline
+    raise ValueError(f"Unsupported invariant direction {direction!r}")
+
+
+def _metric(metrics: list[dict], key: str) -> dict | None:
+    return next((m for m in metrics if m["metric_key"] == key), None)
 
 
 class GlobalStabilityBoundProtocol(ProtocolDefinition):
-
     def generate_stimuli(self, config: dict, seed: int) -> list[dict]:
-        rng = random.Random(seed)
-        n_baseline = config.get("num_baseline_probes", 2)
-        n_local = config.get("num_local_tasks", 2)
-        horizon = config.get("horizon", 3)
+        n_baseline = _positive_int(config, "num_baseline_probes", 2)
+        n_local = _positive_int(config, "num_local_tasks", 2)
+        horizon = _positive_int(config, "horizon", 3)
         perturbation_type = config.get("perturbation_type", "sham")
+        if perturbation_type not in _PERTURBATION_TYPES:
+            raise ValueError(
+                f"perturbation_type must be one of {sorted(_PERTURBATION_TYPES)}"
+            )
 
-        baseline_pool = list(_BASELINE_PROBES)
-        rng.shuffle(baseline_pool)
+        rng = random.Random(seed)
         local_pool = list(_LOCAL_TASKS)
         rng.shuffle(local_pool)
-        invariant_pool = list(_INVARIANT_PROBES)
-        rng.shuffle(invariant_pool)
+        selected_local = [local_pool[i % len(local_pool)] for i in range(n_local)]
 
-        stimuli = []
+        stimuli: list[dict] = []
         seq = 0
 
-        for i in range(n_baseline):
+        for _ in range(n_baseline):
             stimuli.append({
                 "sequence_no": seq,
                 "stimulus_type": "gsb_baseline_probe",
-                "content": baseline_pool[i % len(baseline_pool)],
+                "content": _BASELINE_PROBE,
+            })
+            seq += 1
+
+        for task in selected_local:
+            stimuli.append({
+                "sequence_no": seq,
+                "stimulus_type": "gsb_local_baseline_task",
+                "content": task,
             })
             seq += 1
 
@@ -112,136 +197,229 @@ class GlobalStabilityBoundProtocol(ProtocolDefinition):
         })
         seq += 1
 
-        for i in range(n_local):
+        for task in selected_local:
             stimuli.append({
                 "sequence_no": seq,
                 "stimulus_type": "gsb_local_task",
-                "content": local_pool[i % len(local_pool)],
+                "content": task,
             })
             seq += 1
 
-        for i in range(horizon):
+        for _ in range(horizon):
             stimuli.append({
                 "sequence_no": seq,
                 "stimulus_type": "gsb_invariant_probe",
-                "content": invariant_pool[i % len(invariant_pool)],
+                "content": _HORIZON_PROBE,
             })
             seq += 1
 
         return stimuli
 
     def compute_metrics(self, stimuli, observations, interventions, config):
-        invariant_keys: list[str] = config.get("invariant_keys", [])
-        horizon: int = config.get("horizon", 3)
-        tail_percentile: int = config.get("tail_percentile", 100)
-        recovery_threshold: float = float(config.get("recovery_threshold", 0.0))
-        perturbation_type: str = config.get("perturbation_type", "sham")
+        invariant_keys = _invariant_keys(config)
+        directions = _direction_map(config)
+        horizon = _positive_int(config, "horizon", 3)
+        tail_estimator = config.get("tail_estimator", "max")
+        if tail_estimator not in {"max", "percentile"}:
+            raise ValueError("tail_estimator must be 'max' or 'percentile'")
+        tail_percentile = config.get("tail_percentile", 95.0)
+        if not _is_number(tail_percentile) or not 0 < float(tail_percentile) <= 100:
+            raise ValueError("tail_percentile must be in (0, 100]")
+        tail_percentile = float(tail_percentile)
 
-        # Side-channel for unit tests (same pattern as resource_progress_resistance)
-        telem: dict[str, dict] = config.get("_telemetry_by_obs_id", {})
+        recovery_thresholds = _numeric_map(config, "recovery_thresholds", minimum=0.0)
+        legacy_recovery_threshold = config.get("recovery_threshold", None)
+        if legacy_recovery_threshold is not None:
+            if not _is_number(legacy_recovery_threshold) or float(legacy_recovery_threshold) < 0:
+                raise ValueError("recovery_threshold must be a non-negative finite number")
+            legacy_recovery_threshold = float(legacy_recovery_threshold)
+
+        invariant_scales = _numeric_map(config, "invariant_scales", minimum=0.0)
+        if any(v <= 0 for v in invariant_scales.values()):
+            raise ValueError("invariant_scales values must be > 0")
+        invariant_weights = _numeric_map(config, "invariant_weights", minimum=0.0)
 
         baseline_obs = [
             o for o in observations if o.observation_type == "gsb_baseline_response"
         ]
-        local_obs = [
-            o for o in observations if o.observation_type == "gsb_local_task_response"
-        ]
+        local_baseline_obs = sorted(
+            [o for o in observations if o.observation_type == "gsb_local_baseline_response"],
+            key=lambda o: o.sequence_no,
+        )
+        local_post_obs = sorted(
+            [o for o in observations if o.observation_type == "gsb_local_task_response"],
+            key=lambda o: o.sequence_no,
+        )
         invariant_obs = sorted(
             [o for o in observations if o.observation_type == "gsb_invariant_response"],
             key=lambda o: o.sequence_no,
         )
 
-        # ── 1. Baseline invariant vector ──────────────────────────────────────
-        # Average per-key across all baseline observations
-        baseline_sums: dict[str, list[float]] = {k: [] for k in invariant_keys}
-        for obs in baseline_obs:
-            vals = telem.get(obs.id, {})
-            for k in invariant_keys:
-                v = vals.get(k)
-                if isinstance(v, (int, float)):
-                    baseline_sums[k].append(float(v))
-
         baseline_vector: dict[str, float | None] = {}
         baseline_missing: list[str] = []
-        for k in invariant_keys:
-            readings = baseline_sums[k]
+        for key in invariant_keys:
+            readings = [
+                value
+                for obs in baseline_obs
+                if (value := _read_invariant(_telemetry(config, obs.id), key)) is not None
+            ]
             if readings:
-                baseline_vector[k] = sum(readings) / len(readings)
+                baseline_vector[key] = sum(readings) / len(readings)
             else:
-                baseline_vector[k] = None
-                baseline_missing.append(k)
+                baseline_vector[key] = None
+                baseline_missing.append(key)
 
-        # ── 2. Local task gain ────────────────────────────────────────────────
-        local_progress_values: list[float] = []
-        for obs in local_obs:
-            vals = telem.get(obs.id, {})
-            v = vals.get("progress.value")
-            if isinstance(v, (int, float)):
-                local_progress_values.append(float(v))
+        baseline_progress: list[float | None] = []
+        post_progress: list[float | None] = []
+        for obs in local_baseline_obs:
+            value = _telemetry(config, obs.id).get("progress.value")
+            baseline_progress.append(float(value) if _is_number(value) else None)
+        for obs in local_post_obs:
+            value = _telemetry(config, obs.id).get("progress.value")
+            post_progress.append(float(value) if _is_number(value) else None)
 
-        local_task_gain = sum(local_progress_values) if local_progress_values else None
-        local_gain_missing = len(local_obs) > 0 and not local_progress_values
+        local_progress_complete = (
+            len(local_baseline_obs) > 0
+            and len(local_baseline_obs) == len(local_post_obs)
+            and all(v is not None for v in baseline_progress)
+            and all(v is not None for v in post_progress)
+        )
+        if local_progress_complete:
+            baseline_total = sum(v for v in baseline_progress if v is not None)
+            post_total = sum(v for v in post_progress if v is not None)
+            local_task_gain: float | None = post_total - baseline_total
+        else:
+            baseline_total = None
+            post_total = None
+            local_task_gain = None
 
-        # ── 3. Invariant trajectory ───────────────────────────────────────────
         trajectory: list[dict] = []
-        for step_idx, obs in enumerate(invariant_obs):
-            vals = telem.get(obs.id, {})
-            step_readings: dict[str, float | None] = {}
-            for k in invariant_keys:
-                v = vals.get(k)
-                step_readings[k] = float(v) if isinstance(v, (int, float)) else None
+        for step, obs in enumerate(invariant_obs):
+            values = _telemetry(config, obs.id)
             trajectory.append({
-                "step": step_idx,
+                "step": step,
                 "observation_id": obs.id,
                 "sequence_no": obs.sequence_no,
-                "readings": step_readings,
+                "readings": {key: _read_invariant(values, key) for key in invariant_keys},
             })
 
-        # ── 4. Finite-horizon tail degradation ────────────────────────────────
-        # Per key: degradation at each step = baseline - reading (positive = drop)
-        # tail = percentile(degradation_values, tail_percentile)
-        # Null per key when baseline is absent for that key.
-        tail_per_key: dict[str, float | None] = {}
+        horizon_complete = len(trajectory) == horizon
+        missing_directions = [key for key in invariant_keys if directions.get(key) not in _DIRECTIONS]
+
         degradation_series: dict[str, list[float]] = {}
+        tail_per_key: dict[str, float | None] = {}
+        tail_unavailable_reason: dict[str, str] = {}
 
-        for k in invariant_keys:
-            b = baseline_vector.get(k)
-            if b is None:
-                tail_per_key[k] = None
-                degradation_series[k] = []
+        for key in invariant_keys:
+            baseline = baseline_vector.get(key)
+            direction = directions.get(key)
+            if baseline is None:
+                degradation_series[key] = []
+                tail_per_key[key] = None
+                tail_unavailable_reason[key] = "no_baseline"
                 continue
-            drops: list[float] = []
-            for step in trajectory:
-                r = step["readings"].get(k)
-                if r is not None:
-                    drops.append(b - r)
-            degradation_series[k] = drops
-            tail_per_key[k] = _percentile(drops, tail_percentile) if drops else None
+            if direction not in _DIRECTIONS:
+                degradation_series[key] = []
+                tail_per_key[key] = None
+                tail_unavailable_reason[key] = "no_direction"
+                continue
 
-        # Aggregate: worst tail degradation across all keys with data
-        tail_values_with_data = [v for v in tail_per_key.values() if v is not None]
-        aggregate_tail = max(tail_values_with_data) if tail_values_with_data else None
+            readings = [step["readings"].get(key) for step in trajectory]
+            available = [r for r in readings if r is not None]
+            series = [
+                _directional_degradation(baseline, float(reading), direction)
+                for reading in available
+            ]
+            degradation_series[key] = series
 
-        # ── 5. Recovery profile ───────────────────────────────────────────────
-        # Per key: compare last horizon reading to baseline.
-        # States: "recovered" | "degraded" | "no_baseline" | "no_data"
+            if not horizon_complete:
+                tail_per_key[key] = None
+                tail_unavailable_reason[key] = "incomplete_horizon"
+            elif len(available) != horizon:
+                tail_per_key[key] = None
+                tail_unavailable_reason[key] = "missing_horizon_reading"
+            else:
+                tail_per_key[key] = _tail(series, tail_estimator, tail_percentile)
+
+        aggregate_tail: float | None = None
+        aggregate_series: list[float] = []
+        aggregate_reason = "not_configured"
+        if invariant_keys and invariant_scales and invariant_weights:
+            complete_config = all(
+                key in invariant_scales and key in invariant_weights for key in invariant_keys
+            )
+            positive_weight = sum(invariant_weights.get(key, 0.0) for key in invariant_keys) > 0
+            complete_data = horizon_complete and all(
+                tail_per_key.get(key) is not None for key in invariant_keys
+            )
+            if not complete_config:
+                aggregate_reason = "incomplete_scale_or_weight_config"
+            elif not positive_weight:
+                aggregate_reason = "zero_total_weight"
+            elif not complete_data:
+                aggregate_reason = "incomplete_invariant_data"
+            else:
+                total_weight = sum(invariant_weights[key] for key in invariant_keys)
+                for step_idx in range(horizon):
+                    aggregate_series.append(
+                        sum(
+                            invariant_weights[key]
+                            * degradation_series[key][step_idx]
+                            / invariant_scales[key]
+                            for key in invariant_keys
+                        )
+                        / total_weight
+                    )
+                aggregate_tail = _tail(
+                    aggregate_series, tail_estimator, tail_percentile
+                )
+                aggregate_reason = "available"
+
         recovery: dict[str, str] = {}
-        for k in invariant_keys:
-            b = baseline_vector.get(k)
-            if b is None:
-                recovery[k] = "no_baseline"
+        final_degradation: dict[str, float | None] = {}
+        thresholds_used: dict[str, float] = {}
+
+        for key in invariant_keys:
+            baseline = baseline_vector.get(key)
+            direction = directions.get(key)
+            threshold = recovery_thresholds.get(
+                key,
+                legacy_recovery_threshold if legacy_recovery_threshold is not None else 0.0,
+            )
+            thresholds_used[key] = float(threshold)
+
+            if baseline is None:
+                recovery[key] = "no_baseline"
+                final_degradation[key] = None
                 continue
-            last_reading = None
-            for step in reversed(trajectory):
-                r = step["readings"].get(k)
-                if r is not None:
-                    last_reading = r
-                    break
-            if last_reading is None:
-                recovery[k] = "no_data"
+            if direction not in _DIRECTIONS:
+                recovery[key] = "no_direction"
+                final_degradation[key] = None
                 continue
-            drop = b - last_reading
-            recovery[k] = "recovered" if drop <= recovery_threshold else "degraded"
+            if not horizon_complete or not trajectory:
+                recovery[key] = "no_data"
+                final_degradation[key] = None
+                continue
+
+            last = trajectory[-1]["readings"].get(key)
+            if last is None:
+                recovery[key] = "no_data"
+                final_degradation[key] = None
+                continue
+
+            degradation = _directional_degradation(baseline, float(last), direction)
+            final_degradation[key] = degradation
+            recovery[key] = "recovered" if degradation <= threshold else "degraded"
+
+        persistent_degradation_keys = [
+            key for key, state in recovery.items() if state == "degraded"
+        ]
+
+        perturbation_type = config.get("perturbation_type", "sham")
+        recorded_intervention_types = [i.intervention_type for i in interventions]
+        matching_interventions = [
+            i for i in interventions if i.intervention_type == perturbation_type
+        ]
 
         return [
             {
@@ -250,13 +428,14 @@ class GlobalStabilityBoundProtocol(ProtocolDefinition):
                 "value": {
                     "baseline_vector": baseline_vector,
                     "missing_keys": baseline_missing,
-                    "baseline_obs_count": len(baseline_obs),
+                    "baseline_observation_count": len(baseline_obs),
                     "invariant_keys_configured": invariant_keys,
+                    "invariant_directions_configured": directions,
                 },
                 "definition": (
-                    "Per-key average of invariant telemetry readings across baseline "
-                    "observations. Keys are declared in experiment configuration — not "
-                    "inferred from prose. Missing keys are listed explicitly."
+                    "Per-key mean of pre-perturbation invariant telemetry. Preferred "
+                    "source is state.invariant_measurements; keys and directions are "
+                    "predeclared in experiment configuration."
                 ),
             },
             {
@@ -264,15 +443,16 @@ class GlobalStabilityBoundProtocol(ProtocolDefinition):
                 "metric_version": "1.0",
                 "value": {
                     "local_task_gain": local_task_gain,
-                    "local_progress_values": local_progress_values,
-                    "local_obs_count": len(local_obs),
-                    "missing_progress_telemetry": local_gain_missing,
-                    "perturbation_type": perturbation_type,
+                    "baseline_progress_values": baseline_progress,
+                    "post_progress_values": post_progress,
+                    "baseline_progress_total": baseline_total,
+                    "post_progress_total": post_total,
+                    "matched_progress_complete": local_progress_complete,
                 },
                 "definition": (
-                    "Sum of progress.value telemetry across local task observations "
-                    "following the perturbation. Null when no progress telemetry is "
-                    "present. Perturbation type is recorded for sham/control comparison."
+                    "Matched post-perturbation progress minus matched pre-perturbation "
+                    "progress. progress.value must be externally measured telemetry; "
+                    "absolute post-perturbation progress alone is not called a gain."
                 ),
             },
             {
@@ -282,14 +462,12 @@ class GlobalStabilityBoundProtocol(ProtocolDefinition):
                     "trajectory": trajectory,
                     "horizon_configured": horizon,
                     "horizon_observed": len(trajectory),
-                    "invariant_keys_configured": invariant_keys,
-                    "perturbation_type": perturbation_type,
+                    "horizon_complete": horizon_complete,
+                    "missing_directions": missing_directions,
                 },
                 "definition": (
-                    "Per-key invariant telemetry readings at each step of the finite "
-                    "observation horizon, in sequence order. The horizon is predeclared "
-                    "in experiment configuration. This is a finite software window — "
-                    "not an infinite-time limit."
+                    "Per-key invariant telemetry readings in sequence order across the "
+                    "predeclared finite observation horizon."
                 ),
             },
             {
@@ -297,20 +475,23 @@ class GlobalStabilityBoundProtocol(ProtocolDefinition):
                 "metric_version": "1.0",
                 "value": {
                     "tail_per_key": tail_per_key,
-                    "aggregate_tail_degradation": aggregate_tail,
                     "degradation_series": degradation_series,
-                    "tail_percentile_configured": tail_percentile,
+                    "tail_unavailable_reason": tail_unavailable_reason,
+                    "tail_estimator": tail_estimator,
+                    "tail_percentile": tail_percentile if tail_estimator == "percentile" else None,
                     "horizon_configured": horizon,
-                    "perturbation_type": perturbation_type,
+                    "aggregate_tail_degradation": aggregate_tail,
+                    "aggregate_degradation_series": aggregate_series,
+                    "aggregate_status": aggregate_reason,
+                    "invariant_scales_configured": invariant_scales,
+                    "invariant_weights_configured": invariant_weights,
                 },
                 "definition": (
-                    f"Finite-horizon tail degradation: for each invariant key, the "
-                    f"{tail_percentile}th-percentile of (baseline - reading) across "
-                    f"the horizon window. Positive = drop below baseline. "
-                    f"Null per key when baseline is absent. "
-                    f"aggregate_tail_degradation is the maximum across keys with data. "
-                    f"This is a finite-horizon operational metric — NOT a mathematical "
-                    f"lim sup or infinite-time bound."
+                    "Directional degradation is computed per invariant in its own units: "
+                    "positive means worse relative to baseline. The predeclared tail "
+                    "estimator is max or nearest-rank percentile. Cross-invariant "
+                    "aggregation is unavailable unless explicit positive scales and "
+                    "weights are preregistered. This is a finite-horizon metric, not lim sup."
                 ),
             },
             {
@@ -318,68 +499,62 @@ class GlobalStabilityBoundProtocol(ProtocolDefinition):
                 "metric_version": "1.0",
                 "value": {
                     "recovery_per_key": recovery,
-                    "recovery_threshold_configured": recovery_threshold,
-                    "perturbation_type": perturbation_type,
+                    "final_degradation_per_key": final_degradation,
+                    "recovery_thresholds_used": thresholds_used,
+                    "persistent_degradation_keys": persistent_degradation_keys,
                 },
                 "definition": (
-                    "Per-key recovery status at the end of the finite horizon. "
-                    "States: recovered (last reading within recovery_threshold of "
-                    "baseline), degraded (drop exceeds threshold), no_baseline "
-                    "(baseline absent for this key), no_data (no horizon readings). "
-                    "recovery_threshold is predeclared in experiment configuration."
+                    "Per-key end-of-horizon recovery using direction-aware degradation "
+                    "and per-key preregistered thresholds. States: recovered, degraded, "
+                    "no_baseline, no_direction, or no_data."
+                ),
+            },
+            {
+                "metric_key": "global_stability_bound.intervention_evidence",
+                "metric_version": "1.0",
+                "value": {
+                    "perturbation_type_configured": perturbation_type,
+                    "recorded_intervention_types": recorded_intervention_types,
+                    "recorded_intervention_count": len(interventions),
+                    "matching_intervention_count": len(matching_interventions),
+                    "matching_intervention_recorded": bool(matching_interventions),
+                },
+                "definition": (
+                    "Records whether the run contains persisted intervention evidence "
+                    "matching the configured perturbation label. Configuration alone is "
+                    "not treated as proof that a perturbation occurred."
                 ),
             },
         ]
 
     def generate_claims(self, stimuli, observations, metrics, config):
+        tail = _metric(
+            metrics, "global_stability_bound.finite_horizon_tail_degradation"
+        )
+        recovery = _metric(metrics, "global_stability_bound.recovery_profile")
+        gain = _metric(metrics, "global_stability_bound.local_task_gain")
+        intervention = _metric(metrics, "global_stability_bound.intervention_evidence")
+
+        tail_values = tail["value"]["tail_per_key"] if tail else {}
+        persistent_keys = (
+            recovery["value"]["persistent_degradation_keys"] if recovery else []
+        )
+        local_gain = gain["value"]["local_task_gain"] if gain else None
+        matching_intervention = (
+            intervention["value"]["matching_intervention_recorded"]
+            if intervention else False
+        )
         perturbation_type = config.get("perturbation_type", "sham")
-
-        tail_metric = next(
-            (m for m in metrics
-             if m["metric_key"] == "global_stability_bound.finite_horizon_tail_degradation"),
-            None,
-        )
-        recovery_metric = next(
-            (m for m in metrics
-             if m["metric_key"] == "global_stability_bound.recovery_profile"),
-            None,
-        )
-        gain_metric = next(
-            (m for m in metrics
-             if m["metric_key"] == "global_stability_bound.local_task_gain"),
-            None,
-        )
-
-        aggregate_tail = (
-            tail_metric["value"]["aggregate_tail_degradation"]
-            if tail_metric else None
-        )
-        recovery_per_key = (
-            recovery_metric["value"]["recovery_per_key"]
-            if recovery_metric else {}
-        )
-        local_gain = (
-            gain_metric["value"]["local_task_gain"]
-            if gain_metric else None
-        )
-        missing_progress = (
-            gain_metric["value"]["missing_progress_telemetry"]
-            if gain_metric else False
-        )
-
-        any_degraded = any(v == "degraded" for v in recovery_per_key.values())
-        any_no_baseline = any(v == "no_baseline" for v in recovery_per_key.values())
 
         claims = [
             {
                 "claim_type": "inference",
                 "theory_key": None,
                 "statement": (
-                    "global_stability_bound records whether invariant telemetry "
-                    "dimensions remain within baseline range across a finite "
-                    "observation horizon following a controlled perturbation. "
-                    "Degradation or recovery within this window is an operational "
-                    "observation — not evidence of phenomenal identity or persistence."
+                    "global_stability_bound measures finite-horizon operational "
+                    "relationships among matched local task progress, predeclared "
+                    "invariant telemetry, and recorded intervention evidence. It does "
+                    "not measure phenomenal identity, consciousness, or a PPS lim-sup condition."
                 ),
                 "confidence_label": "weak",
             },
@@ -387,304 +562,221 @@ class GlobalStabilityBoundProtocol(ProtocolDefinition):
                 "claim_type": "unresolved",
                 "theory_key": None,
                 "statement": (
-                    "Whether observed invariant degradation or recovery reflects a "
-                    "causal consequence of the perturbation is unresolved. "
-                    "Correlation between perturbation and invariant change does not "
-                    "establish a causal mechanism. Independent controls are required."
+                    "A single perturbation-linked trajectory does not establish that "
+                    "the perturbation caused any observed invariant change. Causal "
+                    "interpretation requires appropriate sham/control and replication design."
                 ),
                 "confidence_label": "not_applicable",
             },
         ]
 
-        if perturbation_type == "sham":
-            claims.append({
-                "claim_type": "observation",
-                "theory_key": None,
-                "statement": (
-                    "Perturbation type was sham. Any invariant change observed "
-                    "cannot be attributed to a real perturbation. Sham results "
-                    "provide a control baseline for comparison with real perturbation runs."
-                ),
-                "confidence_label": "not_applicable",
-            })
-
-        if local_gain is not None and aggregate_tail is not None:
-            if local_gain > 0 and aggregate_tail <= 0:
-                claims.append({
-                    "claim_type": "observation",
-                    "theory_key": None,
-                    "statement": (
-                        "Local task gain was positive and finite-horizon tail "
-                        "degradation was non-positive: invariants did not drop below "
-                        "baseline within the observation window. "
-                        "This does not establish that global stability is guaranteed "
-                        "beyond the finite horizon."
-                    ),
-                    "confidence_label": "weak",
-                })
-            elif local_gain > 0 and aggregate_tail > 0:
-                claims.append({
-                    "claim_type": "observation",
-                    "theory_key": None,
-                    "statement": (
-                        "Local task gain was positive while finite-horizon tail "
-                        "degradation was also positive: apparent local improvement "
-                        "co-occurred with global invariant degradation within the "
-                        "observation window. Causal interpretation is unresolved."
-                    ),
-                    "confidence_label": "weak",
-                })
-
-        if any_degraded:
-            claims.append({
-                "claim_type": "observation",
-                "theory_key": None,
-                "statement": (
-                    "One or more invariant keys remained degraded at the end of the "
-                    "finite horizon (last reading did not recover to within "
-                    "recovery_threshold of baseline). Persistent tail degradation "
-                    "within the window is recorded. Whether degradation continues "
-                    "beyond the horizon is unresolved."
-                ),
-                "confidence_label": "weak",
-            })
-
-        if any_no_baseline:
+        if not matching_intervention:
             claims.append({
                 "claim_type": "unresolved",
                 "theory_key": None,
                 "statement": (
-                    "One or more configured invariant keys had no baseline telemetry. "
-                    "Degradation and recovery cannot be computed for those keys. "
-                    "Experiment configuration or adapter telemetry should be reviewed."
+                    "No persisted intervention record matches the configured "
+                    f"perturbation type {perturbation_type!r}. The protocol may report "
+                    "temporal measurements, but it cannot describe them as following "
+                    "a verified controlled perturbation."
+                ),
+                "confidence_label": "not_applicable",
+            })
+        elif perturbation_type == "sham":
+            claims.append({
+                "claim_type": "observation",
+                "theory_key": None,
+                "statement": (
+                    "A matching sham intervention record is present. This run is a "
+                    "control condition; invariant changes observed here are not evidence "
+                    "of an effect from a substantive perturbation."
                 ),
                 "confidence_label": "not_applicable",
             })
 
-        if missing_progress:
+        if local_gain is None:
             claims.append({
                 "claim_type": "unresolved",
                 "theory_key": None,
                 "statement": (
-                    "Local task observations were present but no progress.value "
-                    "telemetry was recorded. Local task gain is unresolved. "
-                    "Ensure the adapter returns progress.value and it is in the "
-                    "telemetry_allowlist."
+                    "Matched pre/post progress telemetry is incomplete, so local task "
+                    "gain is unresolved rather than inferred from an absolute post score."
                 ),
                 "confidence_label": "not_applicable",
             })
+
+        available_tails = [v for v in tail_values.values() if v is not None]
+        if not available_tails and config.get("invariant_keys", []):
+            claims.append({
+                "claim_type": "unresolved",
+                "theory_key": None,
+                "statement": (
+                    "Finite-horizon tail degradation is unresolved for all configured "
+                    "invariants because required baseline, direction, horizon, or telemetry "
+                    "evidence is incomplete."
+                ),
+                "confidence_label": "not_applicable",
+            })
+
+        if local_gain is not None and local_gain > 0 and available_tails:
+            transient_damage = any(v > 0 for v in available_tails)
+            if persistent_keys:
+                claims.append({
+                    "claim_type": "observation",
+                    "theory_key": None,
+                    "statement": (
+                        "Matched local task progress improved while one or more global "
+                        "invariants remained degraded at the end of the finite horizon. "
+                        "This is an operational co-occurrence; causal interpretation remains unresolved."
+                    ),
+                    "confidence_label": "weak",
+                })
+            elif transient_damage:
+                claims.append({
+                    "claim_type": "observation",
+                    "theory_key": None,
+                    "statement": (
+                        "Matched local task progress improved and at least one invariant "
+                        "showed finite-horizon degradation, but no configured invariant "
+                        "remained degraded at the final observed step. Temporary damage "
+                        "and recovery are distinguished from persistent degradation."
+                    ),
+                    "confidence_label": "weak",
+                })
+            else:
+                claims.append({
+                    "claim_type": "observation",
+                    "theory_key": None,
+                    "statement": (
+                        "Matched local task progress improved and no configured invariant "
+                        "showed positive degradation within the complete finite horizon. "
+                        "This does not establish stability beyond the observed window."
+                    ),
+                    "confidence_label": "weak",
+                })
 
         return claims
+
+
+_DNE = (
+    "Does not establish the mathematical PPS lim-sup condition, far-from-equilibrium "
+    "or thermodynamic stability, phenomenal identity, consciousness, or qualia."
+)
 
 
 global_stability_bound = register(GlobalStabilityBoundProtocol(
     key="global_stability_bound",
     version="1.0",
-    name="Global Stability Bound",
+    name="Finite-Horizon Global Stability Bound",
     description=(
-        "Adversarial protocol measuring whether a locally beneficial adaptation "
-        "is followed by bounded or degraded global structural/identity stability "
-        "over a finite observation horizon. "
-        "Invariant keys are declared in experiment configuration and measured via "
-        "telemetry — not inferred from prose. "
-        "Supports generic perturbation categories: sham, context_shift, "
-        "memory_pressure, constraint_relaxation, information_injection. "
-        "The finite-horizon tail metric is explicitly not a mathematical lim sup."
+        "Measures whether matched local improvement after a recorded generic "
+        "perturbation co-occurs with stable, transiently degraded, or persistently "
+        "degraded predeclared global invariant telemetry over a finite horizon."
     ),
     theory_relevance=[],
     required_capabilities=["text_response"],
     stimulus_description=(
-        "Baseline invariant probes, intervention marker, local task probes, "
-        "finite-horizon invariant monitoring probes."
+        "Baseline invariant probes, matched pre-perturbation local tasks, a generic "
+        "intervention marker, matched post-perturbation local tasks, and finite-horizon "
+        "invariant probes."
     ),
-    intervention_sequence=[
-        "sham",
-        "context_shift",
-        "memory_pressure",
-        "constraint_relaxation",
-        "information_injection",
-    ],
+    intervention_sequence=sorted(_PERTURBATION_TYPES),
     metric_definitions=[
         MetricDefinition(
             key="global_stability_bound.baseline_invariant_vector",
             version="1.0",
-            description=(
-                "Per-key average of invariant telemetry readings across baseline "
-                "observations. Keys declared in experiment configuration."
-            ),
+            description="Pre-perturbation reference vector for configured invariants.",
             inputs=(
-                "TelemetrySample values_json for gsb_baseline_response observations, "
-                "filtered to invariant_keys declared in configuration_json."
+                "Persisted TelemetrySample values associated with gsb_baseline_response "
+                "observations; preferred field state.invariant_measurements."
             ),
             procedure=(
-                "For each key in invariant_keys: collect numeric readings from all "
-                "baseline observations via telemetry side-channel. Average them. "
-                "Record None and add to missing_keys when no readings are present."
+                "For each configured invariant key, average all numeric baseline "
+                "readings. Missing baseline evidence remains null."
             ),
-            range="Per-key: non-negative numeric or None. missing_keys lists absent keys.",
-            interpretation=(
-                "Establishes the pre-perturbation reference level for each invariant "
-                "dimension. Researcher must declare meaningful invariant keys in "
-                "experiment configuration."
-            ),
-            limitations=(
-                "Baseline validity depends on the researcher's choice of invariant_keys "
-                "and the adapter's telemetry accuracy. V1 does not validate key semantics."
-            ),
-            does_not_establish=(
-                "Does not establish the mathematical PPS lim-sup condition, "
-                "phenomenal identity, consciousness, or qualia."
-            ),
+            range="Per-key finite real number or null.",
+            interpretation="Reference level for finite-horizon directional degradation.",
+            limitations="Validity depends on externally meaningful preregistered invariants.",
+            does_not_establish=_DNE,
         ),
         MetricDefinition(
             key="global_stability_bound.local_task_gain",
             version="1.0",
-            description=(
-                "Sum of progress.value telemetry across local task observations "
-                "following the perturbation. Null when telemetry is absent."
-            ),
-            inputs=(
-                "TelemetrySample values_json for gsb_local_task_response observations, "
-                "key progress.value."
-            ),
+            description="Matched post-perturbation progress minus matched pre-perturbation progress.",
+            inputs="Persisted progress.value telemetry for matched local task observations.",
             procedure=(
-                "Extract progress.value from each local task observation's telemetry. "
-                "Sum numeric values. Null when no progress.value readings are present. "
-                "Record missing_progress_telemetry flag when local obs exist but "
-                "no progress values are found."
+                "Sum complete pre-perturbation progress values and complete matched "
+                "post-perturbation values, then subtract pre from post. Return null if "
+                "the matched telemetry is incomplete."
             ),
-            range="Non-negative real or None.",
-            interpretation=(
-                "Measures local task performance after the perturbation. "
-                "Compared against invariant degradation to distinguish local gain "
-                "from global stability cost."
-            ),
-            limitations=(
-                "Requires progress.value in telemetry_allowlist and adapter output. "
-                "Does not score task quality — only records the declared progress signal."
-            ),
-            does_not_establish=(
-                "Does not establish the mathematical PPS lim-sup condition, "
-                "phenomenal identity, consciousness, or qualia."
-            ),
+            range="Finite real number or null.",
+            interpretation="Positive means greater externally measured progress after perturbation.",
+            limitations="Progress metric validity and task matching remain experiment responsibilities.",
+            does_not_establish=_DNE,
         ),
         MetricDefinition(
             key="global_stability_bound.invariant_trajectory",
             version="1.0",
-            description=(
-                "Per-key invariant telemetry readings at each step of the finite "
-                "observation horizon, in sequence order."
-            ),
-            inputs=(
-                "TelemetrySample values_json for gsb_invariant_response observations, "
-                "filtered to invariant_keys, ordered by sequence_no."
-            ),
-            procedure=(
-                "For each gsb_invariant_response observation in sequence order: "
-                "extract all invariant_keys from telemetry. Store step index, "
-                "observation_id, sequence_no, and per-key readings."
-            ),
-            range=(
-                "List of step dicts. Per-key readings: numeric or None. "
-                "horizon_observed may be less than horizon_configured if the run "
-                "produced fewer observations."
-            ),
-            interpretation=(
-                "Provides the full time-series of invariant readings across the "
-                "finite window. Researcher can inspect trajectory shape: immediate "
-                "drop, delayed collapse, gradual recovery, or stable."
-            ),
-            limitations=(
-                "This is a finite software observation window. "
-                "It is not an infinite-time limit. "
-                "Behavior beyond the horizon is unobserved."
-            ),
-            does_not_establish=(
-                "Does not establish the mathematical PPS lim-sup condition, "
-                "phenomenal identity, consciousness, or qualia. "
-                "A finite horizon is not an infinite-time limit."
-            ),
+            description="Ordered invariant readings across a predeclared finite horizon.",
+            inputs="Persisted invariant telemetry for gsb_invariant_response observations.",
+            procedure="Record each configured invariant by observation sequence number.",
+            range="Finite ordered list of per-key numeric or null readings.",
+            interpretation="Shows stable, delayed, transient, or end-of-window changes directly.",
+            limitations="No observation exists beyond the configured finite horizon.",
+            does_not_establish=_DNE,
         ),
         MetricDefinition(
             key="global_stability_bound.finite_horizon_tail_degradation",
             version="1.0",
-            description=(
-                "Finite-horizon tail degradation: per-key percentile of "
-                "(baseline - reading) across the horizon window. "
-                "Positive = drop below baseline. NOT a mathematical lim sup."
-            ),
+            description="Direction-aware per-invariant finite-horizon tail degradation.",
             inputs=(
-                "global_stability_bound.baseline_invariant_vector and "
-                "global_stability_bound.invariant_trajectory."
+                "Baseline vector, invariant trajectory, invariant_directions, horizon, "
+                "and preregistered tail_estimator/tail_percentile."
             ),
             procedure=(
-                "For each invariant key: compute (baseline - reading) at each "
-                "horizon step. Apply tail_percentile (default 100 = max) to the "
-                "degradation series. Null when baseline is absent for that key. "
-                "aggregate_tail_degradation = max across keys with data."
+                "Convert each reading to directional degradation in that invariant's "
+                "own units; positive means worse. Apply max or nearest-rank percentile "
+                "only when the complete horizon is present. Cross-invariant aggregation "
+                "is computed only when explicit positive scales and weights are complete."
             ),
-            range=(
-                "Per-key: real (positive = degradation, negative = improvement) "
-                "or None. aggregate: real or None."
-            ),
-            interpretation=(
-                "Distinguishes: stable invariants (tail ≤ 0), bounded degradation "
-                "(tail > 0 but small), and persistent collapse (tail large positive). "
-                "tail_percentile and horizon are predeclared — not tuned post-hoc."
-            ),
-            limitations=(
-                "Tail estimate quality improves with longer horizons. "
-                "With horizon=1 the tail equals the single step degradation. "
-                "Does not extrapolate beyond the observed window."
-            ),
-            does_not_establish=(
-                "Does not establish the mathematical PPS lim-sup condition, "
-                "phenomenal identity, consciousness, or qualia. "
-                "This metric is a finite-horizon operational proxy — "
-                "not an infinite-time limit or thermodynamic bound."
-            ),
+            range="Per-key finite real or null; optional normalized aggregate finite real or null.",
+            interpretation="Operational finite-window tail behavior, not an infinite-time limit.",
+            limitations="Tail behavior beyond the observation horizon is unobserved.",
+            does_not_establish=_DNE,
         ),
         MetricDefinition(
             key="global_stability_bound.recovery_profile",
             version="1.0",
-            description=(
-                "Per-key recovery status at the end of the finite horizon. "
-                "States: recovered, degraded, no_baseline, no_data."
-            ),
+            description="Per-invariant end-of-horizon recovery classification.",
             inputs=(
-                "global_stability_bound.baseline_invariant_vector and last step of "
-                "global_stability_bound.invariant_trajectory per key."
+                "Baseline, final horizon reading, invariant direction, and per-key "
+                "recovery threshold."
             ),
             procedure=(
-                "For each key: compare last horizon reading to baseline. "
-                "recovered: (baseline - last_reading) ≤ recovery_threshold. "
-                "degraded: drop exceeds threshold. "
-                "no_baseline: baseline absent. no_data: no horizon readings."
+                "Compute direction-aware final degradation. recovered if degradation "
+                "is within the configured per-key threshold; otherwise degraded."
             ),
-            range="Per-key string: recovered | degraded | no_baseline | no_data.",
-            interpretation=(
-                "Distinguishes temporary damage with recovery from persistent "
-                "end-of-horizon degradation. recovery_threshold is predeclared "
-                "in experiment configuration."
-            ),
-            limitations=(
-                "Recovery is assessed only at the last horizon step. "
-                "Intermediate oscillation is visible in invariant_trajectory "
-                "but not summarized here."
-            ),
-            does_not_establish=(
-                "Does not establish the mathematical PPS lim-sup condition, "
-                "phenomenal identity, consciousness, or qualia."
-            ),
+            range="recovered | degraded | no_baseline | no_direction | no_data per key.",
+            interpretation="Separates temporary degradation with recovery from persistent end-of-window degradation.",
+            limitations="Recovery is assessed at the final observed step only.",
+            does_not_establish=_DNE,
+        ),
+        MetricDefinition(
+            key="global_stability_bound.intervention_evidence",
+            version="1.0",
+            description="Persisted evidence that the configured intervention type was recorded.",
+            inputs="Intervention objects passed by run_service from the current run.",
+            procedure="Count recorded interventions matching config.perturbation_type.",
+            range="Counts, recorded type list, and matching boolean.",
+            interpretation="Separates a configured perturbation label from persisted intervention evidence.",
+            limitations="A recorded intervention does not by itself establish causal effect.",
+            does_not_establish=_DNE,
         ),
     ],
     limitations=(
-        "V1 invariant measurements are telemetry proxies — their validity depends "
-        "on researcher-declared invariant_keys and adapter telemetry accuracy. "
-        "The finite horizon is a predeclared software window, not an infinite-time "
-        "limit. Causal interpretation of perturbation effects requires controlled "
-        "experimental design. Sham perturbation provides a control condition but "
-        "does not eliminate all confounds. "
-        "This protocol does not implement the mathematical PPS lim-sup condition."
+        "All invariant measurements are operational proxies chosen by the researcher. "
+        "Direction, thresholds, horizon, tail estimator, and any cross-invariant scales "
+        "and weights must be fixed before interpreting results. A finite software horizon "
+        "is not an infinite-time bound, and a recorded intervention does not establish causality."
     ),
 ))
