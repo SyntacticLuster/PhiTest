@@ -150,9 +150,18 @@ def execute_run(repo: Repository, experiment_id: str, adapter: TargetAdapter,
                          "keys": sorted(filtered.keys())},
                     )
 
-        # Compute metrics — pass recorded interventions
+        # Metrics consume the same allowlisted telemetry persisted as evidence.
+        telemetry_by_obs_id = {
+            sample.observation_id: json.loads(sample.values_json)
+            for sample in repo.list_telemetry_samples(run.id)
+            if sample.observation_id is not None
+        }
+        runtime_config = dict(exp_config)
+        runtime_config["_telemetry_by_obs_id"] = telemetry_by_obs_id
+
+        # Compute metrics — pass recorded interventions and persisted telemetry.
         metric_dicts = protocol.compute_metrics(
-            recorded_stimuli, recorded_observations, recorded_interventions, exp_config
+            recorded_stimuli, recorded_observations, recorded_interventions, runtime_config
         )
         for md in metric_dicts:
             value_json = json.dumps(md["value"])
@@ -171,7 +180,7 @@ def execute_run(repo: Repository, experiment_id: str, adapter: TargetAdapter,
 
         # Generate claims
         claim_dicts = protocol.generate_claims(
-            recorded_stimuli, recorded_observations, metric_dicts, exp_config
+            recorded_stimuli, recorded_observations, metric_dicts, runtime_config
         )
         for cd in claim_dicts:
             claim = EvidenceClaim(
