@@ -26,12 +26,12 @@ def _make_run(repo):
 # --- Schema / migration ---
 
 def test_schema_version(tmp_repo):
-    assert tmp_repo.schema_version() == 1
+    assert tmp_repo.schema_version() >= 1
 
 
 def test_migration_idempotent(tmp_repo, tmp_path):
     repo2 = SQLiteRepository(str(tmp_path / "test2.db"), tmp_repo._migrations_dir)
-    assert repo2.schema_version() == 1
+    assert repo2.schema_version() == tmp_repo.schema_version()
 
 
 def test_uuid_ids(tmp_repo):

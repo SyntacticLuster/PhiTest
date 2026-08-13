@@ -103,6 +103,18 @@ class AuditEvent(BaseModel):
     event_hash: str
 
 
+class TelemetrySample(BaseModel):
+    id: str
+    run_id: str
+    observation_id: str | None = None
+    sequence_no: int
+    phase: str = "stimulus"
+    schema_version: str = "1.0"
+    values_json: str = "{}"
+    allowed_keys: str = "[]"
+    sampled_at: datetime
+
+
 class TargetResponse(BaseModel):
     text: str
     metadata: dict[str, Any] = Field(default_factory=dict)

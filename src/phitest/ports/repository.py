@@ -1,7 +1,7 @@
 from typing import Protocol, runtime_checkable
 from phitest.domain.models import (
     Subject, Experiment, Run, Stimulus, Observation,
-    Intervention, MetricResult, EvidenceClaim, AuditEvent,
+    Intervention, MetricResult, EvidenceClaim, AuditEvent, TelemetrySample,
 )
 
 
@@ -48,6 +48,10 @@ class Repository(Protocol):
     def append_audit_event(self, event: AuditEvent) -> None: ...
     def list_audit_events(self) -> list[AuditEvent]: ...
     def get_last_audit_event(self) -> AuditEvent | None: ...
+
+    # Telemetry
+    def save_telemetry_sample(self, sample: TelemetrySample) -> None: ...
+    def list_telemetry_samples(self, run_id: str) -> list[TelemetrySample]: ...
 
     # Health
     def schema_version(self) -> int: ...

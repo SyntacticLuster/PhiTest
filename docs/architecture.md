@@ -55,6 +55,14 @@ Theory families map operational observations to explicit predictions. They are e
 
 The experiment engine calls only `adapter.send(stimulus, context)` and receives a `TargetResponse`. It never imports vendor SDKs. Authentication secrets are supplied only through environment variables and never appear in logs, audit events, or the database.
 
+Adapters may optionally implement `ControllableTarget` (defined in `ports/target.py`) to receive and apply controlled interventions. The engine checks `isinstance(adapter, ControllableTarget)` at each `intervention_marker` stimulus. Non-controllable adapters skip the marker as before.
+
+## Telemetry transport
+
+`TargetResponse.metadata` carries structured operational measurements from the adapter. Only keys present in both the experiment's `telemetry_allowlist` (in `configuration_json`) and the canonical dimension set in `src/phitest/domain/telemetry.py` are persisted as `TelemetrySample` records. Unknown keys, auth-related keys, and keys not in the canonical set are silently dropped before any persistence call.
+
+Telemetry samples are append-only (enforced by database triggers) and audit-chained. See `docs/telemetry_dimensions.md` for the canonical dimension reference.
+
 ## Persistence
 
 SQLite with explicit SQL migrations. Foreign keys enforced on every connection. Append-only tables enforced by database triggers. No ORM.

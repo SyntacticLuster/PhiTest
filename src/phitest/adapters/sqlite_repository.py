@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from phitest.domain.models import (
     Subject, Experiment, Run, Stimulus, Observation,
-    Intervention, MetricResult, EvidenceClaim, AuditEvent,
+    Intervention, MetricResult, EvidenceClaim, AuditEvent, TelemetrySample,
 )
 
 
@@ -280,6 +280,32 @@ class SQLiteRepository:
                           evidence_json=r["evidence_json"],
                           confidence_label=r["confidence_label"],
                           created_at=_parse_dt(r["created_at"]))
+            for r in rows
+        ]
+
+    # --- Telemetry ---
+    def save_telemetry_sample(self, s: TelemetrySample) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO telemetry_samples VALUES (?,?,?,?,?,?,?,?,?)",
+                (s.id, s.run_id, s.observation_id, s.sequence_no, s.phase,
+                 s.schema_version, s.values_json, s.allowed_keys,
+                 _fmt_dt(s.sampled_at)),
+            )
+
+    def list_telemetry_samples(self, run_id: str) -> list[TelemetrySample]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM telemetry_samples WHERE run_id=? ORDER BY sequence_no",
+                (run_id,),
+            ).fetchall()
+        return [
+            TelemetrySample(
+                id=r["id"], run_id=r["run_id"], observation_id=r["observation_id"],
+                sequence_no=r["sequence_no"], phase=r["phase"],
+                schema_version=r["schema_version"], values_json=r["values_json"],
+                allowed_keys=r["allowed_keys"], sampled_at=_parse_dt(r["sampled_at"]),
+            )
             for r in rows
         ]
 

@@ -3,10 +3,11 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from phitest.domain.models import Run, Stimulus, Observation, Intervention, MetricResult, EvidenceClaim
+from phitest.domain.models import Run, Stimulus, Observation, Intervention, MetricResult, EvidenceClaim, TelemetrySample
 from phitest.domain.errors import NotFoundError, AdapterError
+from phitest.domain.telemetry import ALLOWED_TELEMETRY_KEYS
 from phitest.ports.repository import Repository
-from phitest.ports.target import TargetAdapter
+from phitest.ports.target import TargetAdapter, ControllableTarget
 from phitest.protocols.registry import get_protocol
 from phitest.application import audit_service
 from phitest import config as cfg
@@ -47,11 +48,13 @@ def execute_run(repo: Repository, experiment_id: str, adapter: TargetAdapter,
     audit_service.emit(repo, "experiment_started", "experiment", experiment_id, {})
 
     exp_config = json.loads(experiment.configuration_json)
+    telemetry_allowlist = frozenset(exp_config.get("telemetry_allowlist", [])) & ALLOWED_TELEMETRY_KEYS
 
     try:
         raw_stimuli = protocol.generate_stimuli(exp_config, seed)
         recorded_stimuli = []
         recorded_observations = []
+        recorded_interventions = []
 
         for raw in raw_stimuli:
             content = raw["content"]
@@ -69,8 +72,25 @@ def execute_run(repo: Repository, experiment_id: str, adapter: TargetAdapter,
                                {"sequence_no": stim.sequence_no, "type": stim.stimulus_type})
             recorded_stimuli.append(stim)
 
-            # Skip intervention markers — they are not sent to the target
             if raw["stimulus_type"] == "intervention_marker":
+                if isinstance(adapter, ControllableTarget):
+                    intvn_config = raw.get("intervention_config", {})
+                    intvn_type = intvn_config.get("type", raw.get("content", "marker"))
+                    result = adapter.apply_intervention(intvn_type, intvn_config)
+                    intvn = Intervention(
+                        id=str(uuid.uuid4()),
+                        run_id=run.id,
+                        sequence_no=raw["sequence_no"],
+                        intervention_type=intvn_type,
+                        configuration_json=json.dumps(result),
+                        rationale=raw.get("content", ""),
+                        created_at=_now(),
+                    )
+                    repo.save_intervention(intvn)
+                    audit_service.emit(repo, "intervention_recorded", "intervention", intvn.id,
+                                       {"type": intvn.intervention_type,
+                                        "sequence_no": intvn.sequence_no})
+                    recorded_interventions.append(intvn)
                 continue
 
             try:
@@ -105,9 +125,34 @@ def execute_run(repo: Repository, experiment_id: str, adapter: TargetAdapter,
                                {"sequence_no": obs.sequence_no, "type": obs.observation_type})
             recorded_observations.append(obs)
 
-        # Compute metrics
+            # Persist allowlisted telemetry from response metadata
+            if telemetry_allowlist and response.metadata:
+                filtered = {
+                    k: v for k, v in response.metadata.items()
+                    if k in telemetry_allowlist
+                }
+                if filtered:
+                    sample = TelemetrySample(
+                        id=str(uuid.uuid4()),
+                        run_id=run.id,
+                        observation_id=obs.id,
+                        sequence_no=raw["sequence_no"],
+                        phase="stimulus",
+                        schema_version="1.0",
+                        values_json=json.dumps(filtered),
+                        allowed_keys=json.dumps(sorted(telemetry_allowlist)),
+                        sampled_at=_now(),
+                    )
+                    repo.save_telemetry_sample(sample)
+                    audit_service.emit(
+                        repo, "telemetry_recorded", "telemetry_sample", sample.id,
+                        {"sequence_no": sample.sequence_no,
+                         "keys": sorted(filtered.keys())},
+                    )
+
+        # Compute metrics — pass recorded interventions
         metric_dicts = protocol.compute_metrics(
-            recorded_stimuli, recorded_observations, [], exp_config
+            recorded_stimuli, recorded_observations, recorded_interventions, exp_config
         )
         for md in metric_dicts:
             value_json = json.dumps(md["value"])

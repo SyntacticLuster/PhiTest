@@ -27,6 +27,7 @@ def generate_report(repo: Repository, run_id: str) -> dict:
     interventions = repo.list_interventions(run_id)
     metrics = repo.list_metric_results(run_id)
     claims = repo.list_evidence_claims(run_id)
+    telemetry = repo.list_telemetry_samples(run_id)
 
     theory_keys = json.loads(experiment.theory_keys_json)
     theories = [get_theory(k) for k in theory_keys if get_theory(k)]
@@ -51,6 +52,7 @@ def generate_report(repo: Repository, run_id: str) -> dict:
         "observations": observations,
         "metrics": metrics,
         "claims": claims,
+        "telemetry_samples": telemetry,
         "theories": theories,
         "supported_predictions": supported,
         "contradicted_predictions": contradicted,
