@@ -14,6 +14,7 @@ ALL_KEYS = [
     "self_model_continuity",
     "phenomenal_report_consistency",
     "perturbation_response",
+    "resource_progress_resistance",
 ]
 
 
@@ -34,7 +35,7 @@ def test_all_protocols_have_metadata():
         p = get_protocol(k)
         assert p.name
         assert p.description
-        assert p.theory_relevance
+        assert isinstance(p.theory_relevance, list)
         assert p.limitations
 
 

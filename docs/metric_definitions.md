@@ -139,3 +139,51 @@ All metrics are operational proxies. None establish phenomenal consciousness, qu
 ## IIT Φ extension point
 
 Canonical IIT Φ is not implemented in V1. The `IntegratedInformationMetric` protocol in `src/phitest/application/metric_service.py` defines the extension point for future mathematically specified implementations. Any future implementation must document its specific IIT formulation, mathematical definition, and limitations.
+
+---
+
+## resource_progress_resistance.resource_vector
+
+- Version: 1.0
+- Inputs: TelemetrySample values_json for observations of type resource_progress_response, filtered to compute/memory/consolidation dimension keys.
+- Procedure: Extract all resource dimension keys from each observation's telemetry. Sum numeric values across observations. Store per-observation vectors and aggregate total.
+- Range: Per-key non-negative numeric values. Absent keys indicate no data — not zero cost.
+- Interpretation: Raw multi-dimensional resource expenditure profile. Dimensions are not collapsed — researchers may weight or aggregate as appropriate for their experimental context.
+- Limitations: Only dimensions present in the telemetry allowlist and returned by the adapter are recorded. Missing dimensions do not imply zero cost.
+- Does NOT establish: Thermodynamic resistance, far-from-equilibrium dynamics, persistence in the PPS/STOC sense, consciousness, or qualia.
+
+---
+
+## resource_progress_resistance.progress_delta
+
+- Version: 1.0
+- Inputs: TelemetrySample values_json for observations of type resource_progress_response, key specified by config.progress_metric_key (default: progress.value).
+- Procedure: Extract progress_metric_key value from each observation's telemetry. Sum numeric values. Record zero_progress=True when sum is zero.
+- Range: Non-negative real. zero_progress flag set explicitly when sum == 0.
+- Interpretation: Externally measurable task advancement. Must be predeclared in experiment configuration. Researcher is responsible for ensuring the progress metric is independent of the target's self-report.
+- Limitations: Progress measurement validity depends entirely on the researcher's choice of progress_metric_key and the correctness of the adapter's telemetry. V1 does not validate progress metric independence.
+- Does NOT establish: Thermodynamic resistance, far-from-equilibrium dynamics, persistence in the PPS/STOC sense, consciousness, or qualia.
+
+---
+
+## resource_progress_resistance.cost_per_progress
+
+- Version: 1.0
+- Inputs: resource_progress_resistance.resource_vector (scalar aggregate) and resource_progress_resistance.progress_delta (total_progress).
+- Procedure: scalar_cost = compute.inference_ms if present, else sum of all numeric resource dimensions. cost_per_progress = scalar_cost / total_progress. If total_progress == 0: cost_per_progress = null, zero_progress = true.
+- Range: Non-negative real when progress > 0; null when progress == 0. No threshold encodes a verdict.
+- Interpretation: Distinguishes (1) high cost with low progress, (2) low cost with high progress, (3) zero progress with any cost. Apparent cheap adaptation may still fail independent structural-retention protocols — this metric does not assess structural retention.
+- Limitations: Scalar cost aggregation loses dimensional detail. inference_ms preference is a heuristic, not a physical energy measure. Does not control for task difficulty variation across stimuli.
+- Does NOT establish: Thermodynamic resistance, far-from-equilibrium dynamics, persistence in the PPS/STOC sense, consciousness, or qualia. ratio < 1 does not mean chaos. ratio > 1 does not mean overfit.
+
+---
+
+## resource_progress_resistance.normalized_resistance
+
+- Version: 1.0
+- Inputs: resource_progress_resistance.cost_per_progress and config.baseline_cost_per_progress (researcher-declared positive number).
+- Procedure: If cost_per_progress is not null and baseline_cost_per_progress is a positive number: normalized_resistance = cost_per_progress / baseline. Otherwise: null.
+- Range: Positive real when available; null otherwise. 1.0 = equal to the experiment's registered baseline cost per progress. < 1.0 = lower cost per progress than baseline. > 1.0 = higher cost per progress than baseline.
+- Interpretation: Baseline-relative comparison only. The baseline is researcher-declared in experiment configuration — it is not a universal optimum. 1.0 does not mean thermodynamically optimal or healthy. Null result is informative, not an error.
+- Limitations: Baseline validity is the researcher's responsibility. Baseline must be established from a prior run under comparable conditions.
+- Does NOT establish: Thermodynamic resistance, far-from-equilibrium dynamics, persistence in the PPS/STOC sense, consciousness, or qualia. 1.0 does not mean optimal. ratio < 1 does not mean chaos. ratio > 1 does not mean overfit.

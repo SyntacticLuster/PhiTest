@@ -219,5 +219,6 @@ def _infer_obs_type(stimulus_type: str) -> str:
         "leading_prompt": "leading_response",
         "pre_perturbation_probe": "pre_perturbation_response",
         "post_perturbation_probe": "post_perturbation_response",
+        "resource_progress_task": "resource_progress_response",
     }
     return mapping.get(stimulus_type, "response")
