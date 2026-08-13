@@ -1,8 +1,20 @@
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from importlib import import_module
 from typing import Any
 
 _REGISTRY: dict[str, "ProtocolDefinition"] = {}
+_BUILTIN_MODULES = (
+    "partition_sensitivity",
+    "global_availability",
+    "metacognitive_calibration",
+    "self_model_continuity",
+    "phenomenal_report_consistency",
+    "perturbation_response",
+    "resource_progress_resistance",
+    "global_stability_bound",
+)
+_BUILTINS_LOADED = False
 
 
 @dataclass
@@ -58,9 +70,20 @@ def register(p: ProtocolDefinition) -> ProtocolDefinition:
     return p
 
 
+def _ensure_builtins_loaded() -> None:
+    global _BUILTINS_LOADED
+    if _BUILTINS_LOADED:
+        return
+    for module_name in _BUILTIN_MODULES:
+        import_module(f"phitest.protocols.{module_name}")
+    _BUILTINS_LOADED = True
+
+
 def get_protocol(key: str) -> ProtocolDefinition | None:
+    _ensure_builtins_loaded()
     return _REGISTRY.get(key)
 
 
 def list_protocols() -> list[ProtocolDefinition]:
+    _ensure_builtins_loaded()
     return list(_REGISTRY.values())
